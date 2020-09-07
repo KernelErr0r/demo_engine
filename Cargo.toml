@@ -1,0 +1,6 @@
+[workspace]
+members = [
+	"demo_engine",
+	"demo_editor",
+	"demo_sandbox"
+]
