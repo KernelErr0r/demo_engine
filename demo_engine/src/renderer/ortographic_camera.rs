@@ -1,4 +1,4 @@
-use crate::{Vec3, Mat4};
+use crate::{Mat4, Vec3};
 
 pub struct OrtographicCamera {
     projection_matrix: Mat4,
