@@ -1,20 +1,45 @@
 use crate::renderer::Vertex;
-use glam::{Mat4, Vec2, Vec3, Vec4};
+use crate::Color;
+use glam::{Mat4, Quat, Vec3};
 use glium::index::PrimitiveType;
 use glium::{Display, Frame, IndexBuffer, Program, Surface, VertexBuffer};
 use std::fs;
 
+#[derive(Default)]
+pub struct QuadBuilder {
+    position: Vec3,
+    rotation: Quat,
+    scale: Vec3,
+    color: Color,
+}
+
+impl QuadBuilder {
+    pub fn position<P: Into<Vec3>>(&mut self, position: P) -> &mut Self {
+        self.position = position.into();
+        self
+    }
+
+    pub fn rotation<R: Into<Quat>>(&mut self, rotation: R) -> &mut Self {
+        self.rotation = rotation.into();
+        self
+    }
+
+    pub fn scale<S: Into<Vec3>>(&mut self, scale: S) -> &mut Self {
+        self.scale = scale.into();
+        self
+    }
+
+    pub fn color<C: Into<Color>>(&mut self, color: C) -> &mut Self {
+        self.color = color.into();
+        self
+    }
+}
+
 pub trait Renderer {
     fn begin_rendering(&mut self);
     fn end_rendering(&mut self);
-}
-
-pub trait Clear<C> {
-    fn clear(&mut self, color: C);
-}
-
-pub trait DrawQuad<P, S, C> {
-    fn draw_quad(&mut self, position: P, size: S, color: C);
+    fn clear<C: Into<Color>>(&mut self, color: C);
+    fn draw_quad(&mut self, quad_builder: &QuadBuilder);
 }
 
 pub struct Renderer2D {
@@ -85,77 +110,24 @@ impl Renderer for Renderer2D {
             .finish()
             .expect("Something went wrong during rendering");
     }
-}
 
-impl Clear<f32> for Renderer2D {
-    fn clear(&mut self, color: f32) {
-        self.clear(Vec4::new(color, color, color, 1.0));
-    }
-}
-
-impl Clear<Vec3> for Renderer2D {
-    fn clear(&mut self, color: Vec3) {
-        self.clear(Vec4::new(color.x(), color.y(), color.z(), 1.0));
-    }
-}
-
-impl Clear<Vec4> for Renderer2D {
-    fn clear(&mut self, color: Vec4) {
+    fn clear<C: Into<Color>>(&mut self, color: C) {
         if let Some(ref mut frame) = self.frame {
-            frame.clear_color(color.x(), color.y(), color.z(), color.w());
+            let color = color.into();
+
+            frame.clear_color(color.r(), color.g(), color.b(), color.a());
         } else {
             panic!("Rendering wasn't initiated. Call start_rendering before drawing");
         }
     }
-}
 
-impl DrawQuad<Vec2, Vec2, f32> for Renderer2D {
-    fn draw_quad(&mut self, position: Vec2, size: Vec2, color: f32) {
-        self.draw_quad(
-            Vec3::new(position.x(), position.y(), 0.0),
-            size,
-            Vec4::new(color, color, color, 1.0),
-        );
-    }
-}
-
-impl DrawQuad<Vec3, Vec2, f32> for Renderer2D {
-    fn draw_quad(&mut self, position: Vec3, size: Vec2, color: f32) {
-        self.draw_quad(position, size, Vec4::new(color, color, color, 1.0));
-    }
-}
-
-impl DrawQuad<Vec2, Vec2, Vec3> for Renderer2D {
-    fn draw_quad(&mut self, position: Vec2, size: Vec2, color: Vec3) {
-        self.draw_quad(
-            Vec3::new(position.x(), position.y(), 0.0),
-            size,
-            Vec4::new(color.x(), color.y(), color.z(), 1.0),
-        );
-    }
-}
-
-impl DrawQuad<Vec3, Vec2, Vec3> for Renderer2D {
-    fn draw_quad(&mut self, position: Vec3, size: Vec2, color: Vec3) {
-        self.draw_quad(
-            position,
-            size,
-            Vec4::new(color.x(), color.y(), color.z(), 1.0),
-        );
-    }
-}
-
-impl DrawQuad<Vec2, Vec2, Vec4> for Renderer2D {
-    fn draw_quad(&mut self, position: Vec2, size: Vec2, color: Vec4) {
-        self.draw_quad(Vec3::new(position.x(), position.y(), 0.0), size, color);
-    }
-}
-
-impl DrawQuad<Vec3, Vec2, Vec4> for Renderer2D {
-    fn draw_quad(&mut self, position: Vec3, size: Vec2, color: Vec4) {
+    fn draw_quad(&mut self, quad_builder: &QuadBuilder) {
         if let Some(ref mut frame) = self.frame {
-            let transform = Mat4::from_translation(position)
-                * Mat4::from_scale(Vec3::new(size.x(), size.y(), 0.0));
+            let transform = Mat4::from_scale_rotation_translation(
+                quad_builder.scale,
+                quad_builder.rotation,
+                quad_builder.position,
+            );
 
             frame
                 .draw(
@@ -164,7 +136,7 @@ impl DrawQuad<Vec3, Vec2, Vec4> for Renderer2D {
                     &self.program,
                     &uniform! {
                         u_Transform: transform.to_cols_array_2d(),
-                        u_Color: [color.x(), color.y(), color.z(), color.w()]
+                        u_Color: quad_builder.color
                     },
                     &Default::default(),
                 )

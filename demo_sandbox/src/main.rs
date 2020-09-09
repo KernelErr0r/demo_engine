@@ -1,4 +1,4 @@
-use demo_engine::renderer::{Clear, DrawQuad, Renderer, Renderer2D};
+use demo_engine::renderer::{QuadBuilder, Renderer, Renderer2D};
 use demo_engine::{
     glium::Display,
     glutin::{
@@ -8,7 +8,7 @@ use demo_engine::{
         window::WindowBuilder,
         ContextBuilder,
     },
-    Vec2, Vec3, Vec4,
+    Quat,
 };
 use std::time::{Duration, Instant};
 
@@ -46,11 +46,13 @@ fn main() {
 
         renderer.begin_rendering();
 
-        renderer.clear(Vec3::new(0.3, 0.3, 0.3));
+        renderer.clear((0.3, 0.3, 0.3));
         renderer.draw_quad(
-            Vec3::new(0.0, 0.0, 0.0),
-            Vec2::new(1.0, 1.0),
-            Vec4::new(0.0, 1.0, 0.0, 1.0),
+            QuadBuilder::default()
+                .position((0.0, 0.0, 0.0))
+                .rotation(Quat::from_rotation_z(45.0_f32.to_radians()))
+                .scale((1.0, 1.0, 1.0))
+                .color((0.0, 1.0, 0.0)),
         );
 
         renderer.end_rendering();
