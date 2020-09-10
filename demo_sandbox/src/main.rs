@@ -1,3 +1,4 @@
+use demo_engine::image::{load, ImageFormat};
 use demo_engine::renderer::{QuadBuilder, Renderer, Renderer2D};
 use demo_engine::{
     glium::Display,
@@ -10,6 +11,7 @@ use demo_engine::{
     },
     Quat,
 };
+use std::io::Cursor;
 use std::time::{Duration, Instant};
 
 fn main() {
@@ -23,6 +25,13 @@ fn main() {
     let display = Display::new(window_builder, context_builder, &event_loop).unwrap();
 
     let mut renderer = Renderer2D::new(display);
+
+    let image = load(
+        Cursor::new(&include_bytes!("../../image.png")[..]),
+        ImageFormat::Png,
+    )
+    .unwrap()
+    .to_rgba();
 
     event_loop.run(move |event, _, control_flow| {
         let next_frame_time = Instant::now() + Duration::from_nanos(16_666_667);
@@ -52,7 +61,8 @@ fn main() {
                 .position((0.0, 0.0, 0.0))
                 .rotation(Quat::from_rotation_z(45.0_f32.to_radians()))
                 .scale((1.0, 1.0, 1.0))
-                .color((0.0, 1.0, 0.0)),
+                .color((0.0, 1.0, 0.0))
+                .texture(&image),
         );
 
         renderer.end_rendering();

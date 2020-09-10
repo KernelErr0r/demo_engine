@@ -1,19 +1,47 @@
 use crate::renderer::Vertex;
 use crate::Color;
 use glam::{Mat4, Quat, Vec3};
+use glium::backend::Facade;
 use glium::index::PrimitiveType;
-use glium::{Display, Frame, IndexBuffer, Program, Surface, VertexBuffer};
+use glium::texture::RawImage2d;
+use glium::uniforms::{MagnifySamplerFilter, MinifySamplerFilter};
+use glium::{Display, Frame, IndexBuffer, Program, Surface, Texture2d, VertexBuffer};
+use image::RgbaImage;
+use std::borrow::Cow;
 use std::fs;
 
-#[derive(Default)]
-pub struct QuadBuilder {
+pub struct Quad {
     position: Vec3,
     rotation: Quat,
     scale: Vec3,
     color: Color,
+    texture: Option<Texture2d>,
 }
 
-impl QuadBuilder {
+struct Texture<'a> {
+    dimensions: (u32, u32),
+    data: Cow<'a, [u8]>,
+}
+
+impl<'a> From<&'a RgbaImage> for Texture<'a> {
+    fn from(texture: &'a RgbaImage) -> Self {
+        Self {
+            dimensions: texture.dimensions(),
+            data: texture.as_raw().into(),
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct QuadBuilder<'a> {
+    position: Vec3,
+    rotation: Quat,
+    scale: Vec3,
+    color: Color,
+    texture: Option<Texture<'a>>,
+}
+
+impl<'a> QuadBuilder<'a> {
     pub fn position<P: Into<Vec3>>(&mut self, position: P) -> &mut Self {
         self.position = position.into();
         self
@@ -33,6 +61,33 @@ impl QuadBuilder {
         self.color = color.into();
         self
     }
+
+    pub fn texture(&mut self, texture: &'a RgbaImage) -> &mut Self {
+        self.texture = Some(Texture::from(texture));
+        self
+    }
+
+    pub fn build<F: Facade>(&self, facade: &F) -> Quad {
+        let texture = {
+            match self.texture {
+                Some(ref texture) => {
+                    let image =
+                        RawImage2d::from_raw_rgba_reversed(&texture.data, texture.dimensions);
+
+                    Some(Texture2d::new(facade, image).unwrap())
+                }
+                None => None,
+            }
+        };
+
+        Quad {
+            position: self.position,
+            rotation: self.rotation,
+            scale: self.scale,
+            color: self.color,
+            texture: texture,
+        }
+    }
 }
 
 pub trait Renderer {
@@ -45,34 +100,21 @@ pub trait Renderer {
 pub struct Renderer2D {
     quad_vertex_buffer: VertexBuffer<Vertex>,
     quad_index_buffer: IndexBuffer<u16>,
-    program: Program,
+    color_program: Program,
+    color_and_texture_program: Program,
     display: Display,
     frame: Option<Frame>,
 }
 
 impl Renderer2D {
     pub fn new(display: Display) -> Self {
-        let quad_vertex1 = Vertex {
-            position: [0.5, 0.5],
-        };
-        let quad_vertex2 = Vertex {
-            position: [0.5, -0.5],
-        };
-        let quad_vertex3 = Vertex {
-            position: [-0.5, -0.5],
-        };
-        let quad_vertex4 = Vertex {
-            position: [-0.5, 0.5],
-        };
-        let quad_shape = vec![quad_vertex1, quad_vertex2, quad_vertex3, quad_vertex4];
+        let quad_shape = vec![
+            Vertex::new([0.5, 0.5], [1.0, 1.0]),
+            Vertex::new([0.5, -0.5], [1.0, 0.0]),
+            Vertex::new([-0.5, -0.5], [0.0, 0.0]),
+            Vertex::new([-0.5, 0.5], [0.0, 1.0]),
+        ];
         let quad_indices: [u16; 6] = [0, 1, 3, 1, 2, 3];
-
-        let vertex_shader_source =
-            fs::read_to_string("main.vert").expect("Cannot read data from the file main.vert");
-        let vertex_shader_source = vertex_shader_source.as_str();
-        let fragment_shader_source =
-            fs::read_to_string("main.frag").expect("Cannot read data from the file main.frag");
-        let fragment_shader_source = fragment_shader_source.as_str();
 
         Self {
             quad_vertex_buffer: VertexBuffer::new(&display, &quad_shape)
@@ -83,16 +125,32 @@ impl Renderer2D {
                 &quad_indices,
             )
             .expect("Failed to create the index buffer"),
-            program: Program::from_source(
+            color_program: Renderer2D::create_program(&display, "color.vert", "color.frag"),
+            color_and_texture_program: Renderer2D::create_program(
                 &display,
-                vertex_shader_source,
-                fragment_shader_source,
-                None,
-            )
-            .expect("Failed to create the program"),
+                "color_and_texture.vert",
+                "color_and_texture.frag",
+            ),
             display: display,
             frame: None,
         }
+    }
+
+    fn create_program(
+        display: &Display,
+        vertex_shader_location: &str,
+        fragment_shader_location: &str,
+    ) -> Program {
+        let vertex_shader_source =
+            fs::read_to_string(vertex_shader_location).expect("Cannot read vertex shader");
+        let vertex_shader_source = vertex_shader_source.as_str();
+
+        let fragment_shader_source =
+            fs::read_to_string(fragment_shader_location).expect("Cannot read fragment shader");
+        let fragment_shader_source = fragment_shader_source.as_str();
+
+        Program::from_source(display, vertex_shader_source, fragment_shader_source, None)
+            .expect("Failed to create the program")
     }
 }
 
@@ -123,24 +181,42 @@ impl Renderer for Renderer2D {
 
     fn draw_quad(&mut self, quad_builder: &QuadBuilder) {
         if let Some(ref mut frame) = self.frame {
-            let transform = Mat4::from_scale_rotation_translation(
-                quad_builder.scale,
-                quad_builder.rotation,
-                quad_builder.position,
-            );
+            let quad = quad_builder.build(&self.display);
 
-            frame
-                .draw(
-                    &self.quad_vertex_buffer,
-                    &self.quad_index_buffer,
-                    &self.program,
-                    &uniform! {
-                        u_Transform: transform.to_cols_array_2d(),
-                        u_Color: quad_builder.color
-                    },
-                    &Default::default(),
-                )
-                .unwrap();
+            let transform =
+                Mat4::from_scale_rotation_translation(quad.scale, quad.rotation, quad.position);
+
+            match quad.texture {
+                Some(ref texture) => {
+                    frame
+                        .draw(
+                            &self.quad_vertex_buffer,
+                            &self.quad_index_buffer,
+                            &self.color_and_texture_program,
+                            &uniform! {
+                                u_Transform: transform.to_cols_array_2d(),
+                                u_Color: quad.color,
+                                u_Texture: texture.sampled().minify_filter(MinifySamplerFilter::Nearest).magnify_filter(MagnifySamplerFilter::Nearest)
+                            },
+                            &Default::default(),
+                        )
+                        .unwrap();
+                }
+                None => {
+                    frame
+                        .draw(
+                            &self.quad_vertex_buffer,
+                            &self.quad_index_buffer,
+                            &self.color_program,
+                            &uniform! {
+                                u_Transform: transform.to_cols_array_2d(),
+                                u_Color: quad.color
+                            },
+                            &Default::default(),
+                        )
+                        .unwrap();
+                }
+            }
         } else {
             panic!("Rendering wasn't initiated. Call start_rendering before drawing");
         }
