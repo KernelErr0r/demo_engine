@@ -1,16 +1,12 @@
 use demo_engine::image::{load, ImageFormat};
-use demo_engine::renderer::{QuadBuilder, Renderer, Renderer2D};
-use demo_engine::{
-    glium::Display,
-    glutin::{
-        dpi::LogicalSize,
-        event::{Event, StartCause, WindowEvent},
-        event_loop::{ControlFlow, EventLoop},
-        window::WindowBuilder,
-        ContextBuilder,
-    },
-    Quat,
-};
+use demo_engine::renderer::{QuadBuilder, Renderer, Renderer2D, OrtographicCamera};
+use demo_engine::{glium::Display, glutin::{
+    dpi::LogicalSize,
+    event::{Event, StartCause, WindowEvent},
+    event_loop::{ControlFlow, EventLoop},
+    window::WindowBuilder,
+    ContextBuilder,
+}, Quat, Vec3};
 use std::io::Cursor;
 use std::time::{Duration, Instant};
 
@@ -25,6 +21,9 @@ fn main() {
     let display = Display::new(window_builder, context_builder, &event_loop).unwrap();
 
     let mut renderer = Renderer2D::new(display);
+    let mut camera = OrtographicCamera::new(-1.0, 1.0, -1.0, 1.0);
+
+    camera.set_position(Vec3::new(1.0, 1.0, 1.0));
 
     let image = load(
         Cursor::new(&include_bytes!("../../image.png")[..]),
@@ -53,7 +52,7 @@ fn main() {
             _ => return,
         }
 
-        renderer.begin_rendering();
+        renderer.begin_rendering(&camera);
 
         renderer.clear((0.3, 0.3, 0.3));
         renderer.draw_quad(

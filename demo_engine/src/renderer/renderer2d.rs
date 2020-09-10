@@ -1,4 +1,4 @@
-use crate::renderer::Vertex;
+use crate::renderer::{Vertex, OrtographicCamera};
 use crate::Color;
 use glam::{Mat4, Quat, Vec3};
 use glium::backend::Facade;
@@ -91,7 +91,7 @@ impl<'a> QuadBuilder<'a> {
 }
 
 pub trait Renderer {
-    fn begin_rendering(&mut self);
+    fn begin_rendering(&mut self, camera: &OrtographicCamera);
     fn end_rendering(&mut self);
     fn clear<C: Into<Color>>(&mut self, color: C);
     fn draw_quad(&mut self, quad_builder: &QuadBuilder);
@@ -104,6 +104,7 @@ pub struct Renderer2D {
     color_and_texture_program: Program,
     display: Display,
     frame: Option<Frame>,
+    view_projection_matrix: Mat4,
 }
 
 impl Renderer2D {
@@ -133,6 +134,7 @@ impl Renderer2D {
             ),
             display: display,
             frame: None,
+            view_projection_matrix: Mat4::zero(),
         }
     }
 
@@ -155,8 +157,9 @@ impl Renderer2D {
 }
 
 impl Renderer for Renderer2D {
-    fn begin_rendering(&mut self) {
+    fn begin_rendering(&mut self, camera: &OrtographicCamera) {
         self.frame = Some(self.display.draw());
+        self.view_projection_matrix = camera.get_view_projection_matrix();
     }
 
     fn end_rendering(&mut self) {
@@ -194,6 +197,7 @@ impl Renderer for Renderer2D {
                             &self.quad_index_buffer,
                             &self.color_and_texture_program,
                             &uniform! {
+                                u_ViewProjection: self.view_projection_matrix.to_cols_array_2d(),
                                 u_Transform: transform.to_cols_array_2d(),
                                 u_Color: quad.color,
                                 u_Texture: texture.sampled().minify_filter(MinifySamplerFilter::Nearest).magnify_filter(MagnifySamplerFilter::Nearest)
@@ -209,6 +213,7 @@ impl Renderer for Renderer2D {
                             &self.quad_index_buffer,
                             &self.color_program,
                             &uniform! {
+                                u_ViewProjection: self.view_projection_matrix.to_cols_array_2d(),
                                 u_Transform: transform.to_cols_array_2d(),
                                 u_Color: quad.color
                             },
